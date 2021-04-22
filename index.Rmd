@@ -1,0 +1,615 @@
+---
+title: "miniMPRA - Fig. 2EF"
+subtitle: |
+  | Jason T. Lambert, Linda Su-Feher, Karol Cichewicz, Tracy L. Warren, Iva Zdilar, Yurong Wang, Kenneth J. Lim, Jessica Haigh, Sarah J. Morse, Cesar P. Canales, Tyler W. Stradleigh, Erika Castillo, Viktoria Haghani, Spencer Moss, Hannah Parolini, Diana Quintero, Diwash Shrestha, Daniel Vogt, Leah C. Byrne, Alex S. Nord. 2021: [Parallel functional testing identifies enhancers active in early postnatal mouse brain](https://www.biorxiv.org/content/10.1101/2021.01.15.426772v3) 
+ 
+author: |
+  | Data analysis by:
+  | Karol Cichewicz, [email](kcichewicz@ucdavis.edu), [LinkedIn](https://www.linkedin.com/in/karol-cichewicz/), [Follow me on Twitter](https://twitter.com/karolcichewicz)
+  | Linda Su-Feher,
+  | Yurong Wang,
+  | [Nord Neurogenomics Lab website](https://nordlab.faculty.ucdavis.edu/), [Follow us on Twitter](https://twitter.com/NordLabUCD)
+  Raw data available at [GSE172058](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE172058)
+
+abstract: |
+  Enhancers are cis-regulatory elements that play critical regulatory roles in modulating developmental transcription programs and driving cell-type specific and context-dependent gene expression in the brain. The development of massively parallel reporter assays (MPRAs) has enabled high-throughput functional screening of candidate DNA sequences for enhancer activity. Tissue-specific screening of in vivo enhancer function at scale has the potential to greatly expand our understanding of the role of non-coding sequences in development, evolution, and disease. Here, we adapted a self-transcribing regulatory element MPRA strategy for delivery to early postnatal mouse brain via recombinant adeno-associated virus (rAAV). We identified and validated putative enhancers capable of driving reporter gene expression in mouse forebrain, including regulatory elements within an intronic CACNA1C linkage disequilibrium block associated with risk in neuropsychiatric disorder genetic studies. Paired screening and single enhancer in vivo functional testing, as we show here, represents a powerful approach towards characterizing regulatory activity of enhancers and understanding how enhancer sequences organize gene expression in normal and pathogenic brain development.
+  
+output:
+  html_document:
+    code_folding: hide
+    css: style.css
+    theme: spacelab
+    toc: true
+    toc_depth: 4
+    toc_float: true
+urlcolor: blue
+---
+
+# 1. Dataset info
+
+* 16 mouse amplicons with human orthologs. The host organism is mouse too.
+* Reads are aligned to GRCm38, for consistency with GRCh38 in STAR408 library
+* Amplicon coordinates need to be translated from mm9 and/or in silico PCR. Linda performed LiftOver conversion and saved the results as miniMPRA_mm10_coords.bed
+* Shell scripts were combined into bwa_mem_pipeline.sh, which is saved as a separate file. It needs a bit of refinement but it's a decent draft of simple read processing pipeline.
+* 500 bp band count files - Do not analyze. It's just a spurious samples.
+
+```{r}
+# Global R markdown code chunk options
+knitr::opts_chunk$set(message=FALSE, 
+                      warning = FALSE, 
+                      error=FALSE, 
+                      echo=TRUE, 
+                      cache=FALSE, 
+                      fig.width = 7, fig.height = 6, 
+                      fig.align = 'left')
+
+```
+
+# 2. Shell scripts
+
+### Picard tools - dictionary creation
+
+```{bash, eval = FALSE}
+# Run in an interactive session. Took 0.30 min
+srun -t 05:30:00 -c 8 -n 1 --mem 8000 --pty /bin/bash
+
+java -Xmx8g -jar /share/nordlab/users/kcichewicz/bin/picard.jar CreateSequenceDictionary \
+REFERENCE=/share/nordlab/genomes/Mus_musculus/Ensembl/GRCm38/Sequence/WholeGenomeFasta/Mus_musculus.GRCm38.dna.primary_assembly.fa \
+OUTPUT=/share/nordlab/users/kcichewicz/Reference/Picard_Sequence_Dictionaries/GRCm38_picard.dict/
+
+```
+
+### BWA index creation
+
+```{bash, eval=FALSE}
+# Run in an interactive session. Took about 1 h (??)
+
+/share/nordlab/users/kcichewicz/bin/bwa-0.7.17/bwa index -a bwtsw \
+/share/nordlab/genomes/Mus_musculus/Ensembl/GRCm38/Sequence/WholeGenomeFasta/Mus_musculus.GRCm38.dna.primary_assembly.fa
+
+#-a STR	Algorithm for constructing BWT index. Available options are:
+#is	IS linear-time algorithm for constructing suffix array. It requires 5.37N memory where N is the size of the #database. IS is moderately fast, but does not work with database larger than 2GB. IS is the default algorithm due #to its simplicity. The current codes for IS algorithm are reimplemented by Yuta Mori.
+
+#bwtsw	Algorithm implemented in BWT-SW. This method works with the whole human genome.
+
+```
+
+### fastQC quality control
+
+```{bash, eval=FALSE}
+#!/bin/sh
+#SBATCH --job-name=fastq
+#SBATCH --time=02:00:00
+#SBATCH --mem=16000
+#SBATCH --ntasks=8
+
+/share/nordlab/users/kcichewicz/bin/FastQC/fastqc \
+--threads 8 \
+--outdir /share/nordlab/users/kcichewicz/miniMPRA/fastQC_out \
+/share/nordlab/rawdata/miniMPRA/*fastq
+
+```
+
+### Smart read trimming with NGmerge
+
+```{bash, eval=FALSE}
+#NGmerge was run as follows:
+
+#!/bin/sh
+#SBATCH --job-name=NG_trim
+#SBATCH --time=03:00:00
+#SBATCH --mem=8000
+#SBATCH --ntasks=4
+
+current_sample=$1
+input_dir=/share/nordlab/rawdata/miniMPRA/
+output_dir=/share/nordlab/users/kcichewicz/miniMPRA/trimmed_fastq/
+
+/share/nordlab/users/kcichewicz/bin/NGmerge-master/NGmerge \
+-a \
+-v \
+-u 41 \
+-n 4 \
+-1 $input_dir/"$current_sample"_L001_R1_001.fastq \
+-2 $input_dir/"$current_sample"_L001_R2_001.fastq \
+-o $output_dir/"$current_sample"
+
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+  sbatch NG_merge.sh $sample
+done
+
+
+STARR-l-1kb-150311_S5
+STARR-l-500bp-150311_S6
+STARR-s1-1kb-150311_S1
+STARR-s1-500bp-150311_S7
+STARR-s2-1kb-150311_S2
+STARR-s3-1kb-150311_S3
+STARR-s4-1kb-150311_S4
+
+
+```
+
+### Alignment
+
+```{bash, eval=FALSE}
+
+#!/bin/sh
+#SBATCH --job-name=bwa
+#SBATCH --time=03:00:00
+#SBATCH --mem=32000
+#SBATCH --ntasks=12
+
+current_sample=$1
+
+reads=/share/nordlab/users/kcichewicz/miniMPRA/trimmed_fastq/
+out_dir=/share/nordlab/users/kcichewicz/miniMPRA/sam_files
+genome=/share/nordlab/genomes/Mus_musculus/Ensembl/GRCm38/Sequence/WholeGenomeFasta/Mus_musculus.GRCm38.dna.primary_assembly.fa
+
+
+/share/nordlab/users/kcichewicz/bin/bwa-0.7.17/bwa mem \
+-t 12 \
+-M \
+$genome \
+$reads/"$current_sample"_1.fastq \
+$reads/"$current_sample"_2.fastq \
+> $out_dir/$current_sample.sam
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+ sbatch bwa_mem.sh $sample
+done
+
+```
+
+
+### Converting sam to bam files with picard tools
+
+```{bash, eval=FALSE}
+
+#!/bin/sh
+#SBATCH --job-name=sam_to_bam
+#SBATCH --time=02:00:00
+#SBATCH --mem=8000
+#SBATCH --ntasks=1
+
+current_sample=$1
+java -Xmx8g -jar /share/nordlab/users/kcichewicz/bin/picard.jar SortSam \
+INPUT= /share/nordlab/users/kcichewicz/miniMPRA/$current_sample.sam \
+OUTPUT= /share/nordlab/users/kcichewicz/miniMPRA/sorted_bam/$current_sample.bam \
+SORT_ORDER=coordinate
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+ sbatch sam_to_bam.sh $sample
+done
+
+
+```
+
+### Duplicates removal
+
+```{bash, eval=FALSE}
+
+#!/bin/sh
+#SBATCH --job-name=bwa
+#SBATCH --time=03:00:00
+#SBATCH --mem=8000
+#SBATCH --ntasks=1
+
+
+java -Xmx4g -jar /share/nordlab/users/kcichewicz/bin/picard.jar BuildBamIndex \
+INPUT= /share/nordlab/users/kcichewicz/miniMPRA/sorted_bam/$current_sample.bam
+
+current_sample=$1
+java -d64 -Xmx8g -jar /share/nordlab/users/kcichewicz/bin/picard.jar MarkDuplicates REMOVE_DUPLICATES=true \
+INPUT= /share/nordlab/users/kcichewicz/miniMPRA/sorted_bam/$current_sample.bam \
+OUTPUT= /share/nordlab/users/kcichewicz/miniMPRA/dedup_bam/$current_sample.bam \
+METRICS_FILE=$current_sample.txt
+
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+ sbatch dup_rem.sh $sample
+done
+
+
+#!/bin/sh
+#SBATCH --job-name=bwa
+#SBATCH --time=01:00:00
+#SBATCH --mem=8000
+#SBATCH --ntasks=1
+
+java -Xmx8g -jar /share/nordlab/users/kcichewicz/bin/picard.jar BuildBamIndex \
+INPUT= /share/nordlab/users/kcichewicz/miniMPRA/dedup_bam/$current_sample.bam
+
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+ sbatch index.sh $sample
+done
+
+
+
+
+
+#!/bin/sh
+#SBATCH --job-name=bwa
+#SBATCH --time=03:00:00
+#SBATCH --mem=8000
+#SBATCH --ntasks=8
+
+module load deeptools/3.3.1                                                                                          
+current_sample=$1
+bam_files=/share/nordlab/users/kcichewicz/miniMPRA/dedup_bam/
+out_dir=/share/nordlab/users/kcichewicz/miniMPRA/bedGraphs/
+
+mkdir -p /share/nordlab/users/kcichewicz/miniMPRA/bedGraphs/
+
+bamCoverage -b $bam_files/$current_sample.bam -o $out_dir/$current_sample.bedgraph \
+--numberOfProcessors 8 \
+--ignoreDuplicates \
+--outFileFormat bedgraph
+--normalizeUsing CPM
+
+
+
+module load deeptools/3.3.1
+
+
+for sample in STARR-l-1kb-150311_S5 STARR-l-500bp-150311_S6 STARR-s1-1kb-150311_S1 STARR-s1-500bp-150311_S7 STARR-s2-1kb-150311_S2 STARR-s3-1kb-150311_S3 STARR-s4-1kb-150311_S4
+do
+ sbatch bwa_mem_pipeline.sh $sample
+done
+
+
+```
+
+### Bed file construction and count generation
+```{bash, eval=FALSE}
+
+# Linda liftedOver the original mm9 to mm10 coordinates
+
+awk '{print $1":"$2"-"$3}' miniMPRA_mm10_coords.bed > structured_bed.txt
+
+# "chr" had to be removed
+cat structured_bed.txt | sed 's/^chr//' > structured_bed2.txt
+
+
+# This works perfectly!!
+# srun -t 05:30:00 -c 8 -n 1 --mem 8000 --pty /bin/bash
+
+for file in *bam; do 
+
+while read p; do 
+/share/nordlab/users/kcichewicz/bin/samtools-1.10/samtools view -F 0x0400 -c -@ 8 $file $p >> $(echo $file | sed 's/bam/sv_counts.txt/');
+done < structured_bed2.txt;
+
+done
+
+```
+
+# 3. Read count data and quality control
+
+```{r}
+
+#setwd("G:/Shared drives/Nord Lab - Computational Projects/MPRA/mini_MPRA")
+
+library(ggplot2)
+library(genefilter)
+library(ggrepel)
+library(gridExtra)
+library(ggpmisc)
+library(egg)
+library(tidyverse)
+
+
+# Reading data
+
+Maxi <- read.table("miniMPRA_Amplicon_Counts_KC/STARR-l-1kb-150311_S5.sv_counts.txt")
+s1 <- read.table("miniMPRA_Amplicon_Counts_KC/STARR-s1-1kb-150311_S1.sv_counts.txt")
+s2 <- read.table("miniMPRA_Amplicon_Counts_KC/STARR-s2-1kb-150311_S2.sv_counts.txt")
+s3 <- read.table("miniMPRA_Amplicon_Counts_KC/STARR-s3-1kb-150311_S3.sv_counts.txt")
+s4 <- read.table("miniMPRA_Amplicon_Counts_KC/STARR-s4-1kb-150311_S4.sv_counts.txt")
+
+bed <-  read.table("miniMPRA_mm10_coords.bed")
+colnames(bed) <- c("chr", "Start_mm10", "End_mm10", "miniMPRA_ID")
+
+counts <- data.frame("Maxi" = Maxi$V1,
+                     "S1"= s1$V1,
+                     "S2"= s2$V1,
+                     "S3"= s3$V1,
+                     "S4"= s4$V1)
+
+counts$miniMPRA_mean_counts <- rowMeans(counts[,2:5])
+counts$miniMPRA_SD_counts <- rowSds(counts[,2:5])
+
+
+# Calculating proportions
+amp.prop <- as.data.frame(apply(counts, 2, function(x) { (x+1)/(sum(x, na.rm = T)+1) }))
+colnames(amp.prop) <- paste0(colnames(amp.prop), "_prop") 
+
+amp.prop$miniMPRA_mean_prop <- rowMeans(amp.prop[,2:5])
+amp.prop$miniMPRA_SD_prop <- rowSds(amp.prop[,2:5])
+
+
+
+activity <- data.frame("S1_act" = amp.prop$S1_prop / amp.prop$Maxi_prop,
+                          "S2_act" = amp.prop$S2_prop / amp.prop$Maxi_prop,
+                          "S3_act" = amp.prop$S3_prop / amp.prop$Maxi_prop,
+                          "S4_act" = amp.prop$S4_prop / amp.prop$Maxi_prop)
+
+
+activity$miniMPRA_mean_act <- rowMeans(activity[,1:4])
+activity$miniMPRA_SD_act <- rowSds(activity[,1:4])
+
+
+miniMPRA_df <- cbind(bed, counts, amp.prop, activity)
+
+# Changes mm10 to GRCh38
+# #https://www.ncbi.nlm.nih.gov/grc/help/faq/
+miniMPRA_df_file <- miniMPRA_df[,1:9]
+
+colnames(miniMPRA_df_file) <- gsub("mm10", "GRCh38", colnames(miniMPRA_df_file))
+
+#write.csv(miniMPRA_df_file, file = "G:/Shared drives/Nord Lab - Computational Projects/MPRA/mini_MPRA/miniMPRA_counts.csv")
+
+#library(tools)
+#md5sum("miniMPRA_counts.csv")
+
+
+# Reading STAR408 CSV analysis
+star408 <- read.csv("G:/Shared drives/Nord Lab - Computational Projects/MPRA/STAR408/data_complete_408.csv")
+
+#star408$Amp_name
+#miniMPRA_df$miniMPRA_ID
+
+# Orthologs matching:
+
+# miniMPRA_ID   # star408$Amp_name
+
+# "Grik1"          "251_Control_Grik1"
+# "Arid1b_1"       "252_Control_Arid1b_1"
+# "NEG1"           "253_Control_NEG1"
+# "Arx_hs145"      "254_Control_Arx_hs145"
+# "Klhl32_hs676"   "255_Control_Klhl32_hs676"
+# "NEG2"           "256_Control_NEG2"
+# "Btrc_hs897"     "257_Control_Btrc_hs897"
+# "Arx_hs122"      "258_Control_Arx_hs122"
+#"Scn1a"          "259_Control_Scn1a"
+# "Dmrt3"          "260_Control_Dmrt3_hs112"
+# "Arid1b_2"       "261_Control_Arid1b_2"
+# "Chic2_hs687"    "262_Control_Chic2_hs687"
+# "NEG3"           "263_Control_NEG3"
+# "NEG4"           "264_Control_NEG4"
+# "Arid1b_3"       "265_Control_Arid1b_3"
+# "Etv1_hs550"     "266_Control_Etv1_hs550"
+
+
+amplicons_308 <- read.csv("G:/Shared drives/Nord Lab - Computational Projects/MPRA/STAR408/data_predict_308.csv")
+
+# Filtering matching star408 amp names
+amp_name_numbers <- gsub("(d*)_.*","", star408$Amp_name, perl = TRUE)
+matching_name_number_boolean <- ifelse(amp_name_numbers %in% seq(251, 266, 1), TRUE, FALSE)
+
+df <- star408[matching_name_number_boolean, ]
+
+# Merging STAR408 and miniMPRA by the ID column
+df$ID <- c(251:266)
+miniMPRA_df$ID <- c(251:266)
+
+star_mini_MPRA <- merge(miniMPRA_df, df, by = "ID")
+
+
+### Plots ###
+
+# Counts
+```
+
+```{r, eval=FALSE}
+# Saves miniMPRA df as a supp table
+
+miniMPRA <- miniMPRA_df
+
+#write.csv(miniMPRA, file = "G:/Shared drives/Nord Lab - Temp Overflow/STARR-408_Lambert&Su-Feher/biorxiv submission/20210412/Supp_Tables/miniMPRA_counts_prop_act.csv", row.names = F)
+
+```
+
+```{r}
+# Removing Chic2_hs687 due to lowe representation in the library
+# The Arid1b_1 and Arid1b_3 are the overlapping amplicons, so just drop Arid1b_3.
+miniMPRA_df <- miniMPRA_df[miniMPRA_df$miniMPRA_ID != "Chic2_hs687",]
+miniMPRA_df <- miniMPRA_df[miniMPRA_df$miniMPRA_ID != "Arid1b_3",]
+
+# Following Alex's request to change amplicon name
+miniMPRA_df$miniMPRA_ID <- ifelse(miniMPRA_df$miniMPRA_ID == "Dmrt3", "Dmrt3_hs112", miniMPRA_df$miniMPRA_ID)
+
+
+count_m <- reshape2::melt(miniMPRA_df[,c("miniMPRA_ID", "Maxi", "S1", "S2", "S3", "S4")], id = c("miniMPRA_ID"))
+count_m_maxi <- reshape2::melt(miniMPRA_df[,c("miniMPRA_ID", "Maxi")], id = c("miniMPRA_ID"))
+
+# "miniMPRA_mean_counts", "miniMPRA_SD_counts"
+
+# Count metrices
+p_maxi_counts <- ggplot()+
+  geom_point(data = count_m_maxi, aes(x = miniMPRA_ID, y = value, color = variable))+
+  theme_bw()+
+  labs(x = "", y = "Counts", title = "Amplicon representation in the miniMPRA library")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 1000, linetype = 2, color = "red")+
+  theme(axis.text.x = element_blank())
+
+
+p_sample_counts <- ggplot()+
+  geom_boxplot(data = count_m, aes(x = miniMPRA_ID, y = value))+
+  geom_point(data = count_m, aes(x = miniMPRA_ID, y = value, color = variable))+
+  theme_bw()+
+  labs(x = "", y = "Counts", title = "Counts per amplicon and sample")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept =  1000, linetype = 2, color = "red")+
+  theme(axis.text.x = element_blank())
+
+
+
+# Proportion metrices
+prop_m <- reshape2::melt(miniMPRA_df[,c("miniMPRA_ID", "Maxi_prop", "S1_prop", "S2_prop", "S3_prop", "S4_prop")], id = c("miniMPRA_ID"))
+
+p_sample_prop <- ggplot()+
+  geom_boxplot(data = prop_m, aes(x = miniMPRA_ID, y = value))+
+  geom_point(data = prop_m, aes(x = miniMPRA_ID, y = value, color = variable))+
+  theme_bw()+
+  labs(x = "", y = "Proportion", title = "Count proportions per amplicon and sample")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.text.x = element_blank())
+
+
+# Activity metrices
+act_m <- reshape2::melt(miniMPRA_df[,c("miniMPRA_ID", "S1_act", "S2_act", "S3_act", "S4_act")], id = c("miniMPRA_ID")) 
+
+p_sample_act <- ggplot()+
+  geom_boxplot(data = act_m, aes(x = miniMPRA_ID, y = log2(value)))+
+  geom_point(data = act_m, aes(x = miniMPRA_ID, y = log2(value), color = variable))+
+  theme_bw()+
+  labs(x = "", y = "log2 ratiometric activity", title = "Amplicon activity")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.text.x = element_text(angle = 90))+
+  geom_hline(yintercept = 0, linetype = 2, color = "red")
+  
+
+```
+
+
+```{r, fig.width = 9, fig.height = 9}
+
+lay <- rbind(c(1),
+            c(2),
+            c(3),
+            c(4),
+            c(4))
+
+marrangeGrob(list(p_maxi_counts, p_sample_counts, p_sample_prop, p_sample_act), nrow=4, ncol=1, top = "", layout_matrix = lay)
+
+```
+
+# 4. miniMPRA orthologs vs STAR408
+```{r, fig.show = "hold", out.width = "50%"}
+
+# Removing Chic2_hs687 due to lowe representation in the library
+star_mini_MPRA <- star_mini_MPRA[star_mini_MPRA$miniMPRA_ID != "Chic2_hs687",]
+star_mini_MPRA <- star_mini_MPRA[star_mini_MPRA$miniMPRA_ID != "Arid1b_3",]
+
+#sum(star_mini_MPRA$Pass_prop_DNA_and_RNA & star_mini_MPRA$Pass_DNA_count) # 8 amplicons
+#sum(star408$Pass_prop_DNA_and_RNA & star408$Pass_DNA_count) #309 amplicons
+
+formula <- y ~ x
+
+star_mini_MPRA$Pass_prop_DNA_and_RNA <- ifelse(star_mini_MPRA$RNA_prop_mean > 2^-15 & 
+                                         star_mini_MPRA$DNA_prop_mean > 2^-15, TRUE, FALSE) 
+
+star_mini_MPRA$Pass_DNA_count <- rowSums(star_mini_MPRA[,c(35:38)] > 200) >= 4
+
+
+star_mini_MPRA$Pass_QC <- ifelse(star_mini_MPRA$Pass_prop_DNA_and_RNA == TRUE & star_mini_MPRA$Pass_DNA_count == TRUE, TRUE, FALSE)
+
+star_mini_MPRA_QC_Passed <- dplyr::filter(star_mini_MPRA, Pass_QC == TRUE)
+
+# Ratiometric STAR408 activity
+
+# act_m_QC_Passed <- dplyr::filter(act_m, miniMPRA_ID %in%  star_mini_MPRA_QC_Passed$miniMPRA_ID)
+act_m_QC_Passed <- act_m  # Alex requested to show 14 amplicons passing miniMPRA QC
+
+# Order amplicons by mean activity
+
+mean_miniMPRA_act <- act_m_QC_Passed %>% 
+  group_by(miniMPRA_ID) %>% 
+  summarise(average = mean(value))
+
+mean_miniMPRA_act <- as.data.frame(mean_miniMPRA_act)
+
+mean_miniMPRA_act <- arrange(mean_miniMPRA_act, average)
+act_m_QC_Passed$miniMPRA_ID <- factor(act_m_QC_Passed$miniMPRA_ID, levels = mean_miniMPRA_act$miniMPRA_ID)
+
+act_m_QC_Passed$variable2 <- ifelse(act_m_QC_Passed$variable == "S1_act", "Sample 1", "")
+act_m_QC_Passed$variable2 <- ifelse(act_m_QC_Passed$variable == "S2_act", "Sample 2", act_m_QC_Passed$variable2)
+act_m_QC_Passed$variable2 <- ifelse(act_m_QC_Passed$variable == "S3_act", "Sample 3", act_m_QC_Passed$variable2)
+act_m_QC_Passed$variable2 <- ifelse(act_m_QC_Passed$variable == "S4_act", "Sample 4", act_m_QC_Passed$variable2)
+
+
+p_sample_act_figure <- ggplot()+
+  geom_hline(yintercept = 0, linetype = 2, color = "black")+
+  geom_boxplot(data = act_m_QC_Passed, aes(x = miniMPRA_ID, y = log2(value)), outlier.shape = NA)+
+  geom_jitter(data = act_m_QC_Passed, aes(x = miniMPRA_ID, y = log2(value)), width = 0.25, size = 1, alpha = 0.5)+
+  theme_bw()+
+  labs(x = "", y = "log2 ratiometric activity", title = "miniMPRA activity")+
+  theme(plot.title = element_text(hjust = 0.5, size = 14))+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme(
+    text = element_text(size = 12),  
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank())
+
+#p_sample_act_figure 
+
+amplicons_308_minied <- dplyr::filter(amplicons_308, Amp_name2 %in% c("252_PutEnh", "253_PutEnh", "255_PutEnh", "257_PutEnh", "258_PutEnh", "259_PutEnh", "264_PutEnh", "266_PutEnh"))
+
+#filter(amplicons_308_minied, Pvalue < 0.05)$Amp_name
+
+
+star_mini_MPRA_QC_Passed$Pvalue_sig <- ifelse(star_mini_MPRA_QC_Passed$Amp_name %in% c("252_Control_Arid1b_1", "259_Control_Scn1a"), "P < 0.05", "P > 0.05")
+
+
+### miniMPRA vs STAR408 correlation
+corr_plot <- ggplot(star_mini_MPRA_QC_Passed, aes(x = log2(Mean_act), y = log2(miniMPRA_mean_act)))+
+  geom_vline(xintercept = 0, linetype = 2, color = "black")+
+  geom_hline(yintercept = 0, linetype = 2, color = "black")+
+  geom_smooth(formula = formula, method = 'lm', color = "grey", se = FALSE)+
+  geom_point(alpha = 0.5, aes(color = Pvalue_sig), size = 2)+
+  geom_text_repel(aes(label = miniMPRA_ID), size = 4)+
+  stat_poly_eq(formula = formula, 
+               aes(label = paste(..rr.label.., sep = "~~~")), 
+               parse = TRUE, size = 4)+
+  labs(x = "log2 STAR408 ratiometric activity", 
+       y = " log2 miniMPRA activity", 
+       title = "Human STAR408 vs mouse miniMPRA orthologs",
+       color='STAR408 Pvalue')+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 12),
+        plot.margin = margin(t = 0, r = 0, b = 0, l = 20, unit = "pt"),
+        legend.position="bottom")+
+  scale_color_manual(values = c("red", "black"))
+  
+#corr_plot
+
+
+p1 <- corr_plot
+p2 <- p_sample_act_figure
+
+
+#ggsave("G:/Shared drives/Nord Lab - Temp Overflow/STARR-408_Lambert&Su-Feher/Draft #Figures/Figures_eLIFE_KC/Fig_2EF.png", ggarrange(p2, p1, widths = c(1,1), newpage = FALSE), width = 8, height = #4, dpi = 300, units = "in")
+
+
+#ggsave("G:/Shared drives/Nord Lab - Temp Overflow/STARR-408_Lambert&Su-Feher/Draft #Figures/Figures_eLIFE_KC/Fig_2EF.svg", ggarrange(p2, p1, widths = c(1,1), newpage = FALSE), width = 8, height = #4, dpi = 300, units = "in")
+
+#save.image("G:/Shared drives/Nord Lab - Computational Projects/MPRA/mini_MPRA/mini_MPRA.RData")
+#load("G:/Shared drives/Nord Lab - Computational Projects/MPRA/mini_MPRA/mini_MPRA.RData")
+
+```
+
+```{r, fig.width = 10, fig.height = 5, fig.cap = "Fig.2 (E) Ratiometric activity of miniMPRA mouse library. (F) Correlation of the mouse orthologue miniMPRA with the human orthologues of the same sequence from the full MPRA library. Only amplicons that passed quality control criteria for both experiments are included."}
+
+#grid.arrange(p1, p2, nrow = 1, widths = c(1.2, 1)) 
+
+library(cowplot)
+
+plot_grid(p2, p1, 
+          labels = c('E', 'F'), 
+          rel_widths = c(1.2, 1.2),
+          vjust = 0.9)
+
+```
