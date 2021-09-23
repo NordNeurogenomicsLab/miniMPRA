@@ -1,7 +1,10 @@
 ---
-title: "miniMPRA - Fig. 2EF"
+title: |
+ | Parallel functional testing identifies enhancers active in early postnatal mouse brain.
+ |
+ | miniMPRA experiment
 subtitle: |
-  | Jason T. Lambert, Linda Su-Feher, Karol Cichewicz, Tracy L. Warren, Iva Zdilar, Yurong Wang, Kenneth J. Lim, Jessica Haigh, Sarah J. Morse, Cesar P. Canales, Tyler W. Stradleigh, Erika Castillo, Viktoria Haghani, Spencer Moss, Hannah Parolini, Diana Quintero, Diwash Shrestha, Daniel Vogt, Leah C. Byrne, Alex S. Nord. 2021: [Parallel functional testing identifies enhancers active in early postnatal mouse brain](https://www.biorxiv.org/content/10.1101/2021.01.15.426772v3) 
+ | Jason T. Lambert, Linda Su-Feher, Karol Cichewicz, Tracy L. Warren, Iva Zdilar, Yurong Wang, Kenneth J. Lim, Jessica Haigh, Sarah J. Morse, Cesar P. Canales, Tyler W. Stradleigh, Erika Castillo, Viktoria Haghani, Spencer Moss, Hannah Parolini, Diana Quintero, Diwash Shrestha, Daniel Vogt, Leah C. Byrne, Alex S. Nord. 2021: [Parallel functional testing identifies enhancers active in early postnatal mouse brain](https://www.biorxiv.org/content/10.1101/2021.01.15.426772v3) 
  
 author: |
   | Data analysis by:
@@ -12,7 +15,7 @@ author: |
   Raw data available at [GSE172058](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE172058)
 
 abstract: |
-  Enhancers are cis-regulatory elements that play critical regulatory roles in modulating developmental transcription programs and driving cell-type specific and context-dependent gene expression in the brain. The development of massively parallel reporter assays (MPRAs) has enabled high-throughput functional screening of candidate DNA sequences for enhancer activity. Tissue-specific screening of in vivo enhancer function at scale has the potential to greatly expand our understanding of the role of non-coding sequences in development, evolution, and disease. Here, we adapted a self-transcribing regulatory element MPRA strategy for delivery to early postnatal mouse brain via recombinant adeno-associated virus (rAAV). We identified and validated putative enhancers capable of driving reporter gene expression in mouse forebrain, including regulatory elements within an intronic CACNA1C linkage disequilibrium block associated with risk in neuropsychiatric disorder genetic studies. Paired screening and single enhancer in vivo functional testing, as we show here, represents a powerful approach towards characterizing regulatory activity of enhancers and understanding how enhancer sequences organize gene expression in normal and pathogenic brain development.
+   Enhancers are cis-regulatory elements that play critical regulatory roles in modulating developmental transcription programs and driving cell-type specific and context-dependent gene expression in the brain. The development of massively parallel reporter assays (MPRAs) has enabled high-throughput functional screening of candidate DNA sequences for enhancer activity. Tissue-specific screening of in vivo enhancer function at scale has the potential to greatly expand our understanding of the role of non-coding sequences in development, evolution, and disease. Here, we adapted a self-transcribing regulatory element MPRA strategy for delivery to early postnatal mouse brain via recombinant adeno-associated virus (rAAV). We identified and validated putative enhancers capable of driving reporter gene expression in mouse forebrain, including regulatory elements within an intronic CACNA1C linkage disequilibrium block associated with risk in neuropsychiatric disorder genetic studies. Paired screening and single enhancer in vivo functional testing, as we show here, represents a powerful approach towards characterizing regulatory activity of enhancers and understanding how enhancer sequences organize gene expression in the brain.
   
 output:
   html_document:
@@ -295,7 +298,7 @@ done
 
 ```{r}
 
-#setwd("G:/Shared drives/Nord Lab - Computational Projects/MPRA/mini_MPRA")
+#setwd("G:/Shared drives/Nord Lab - Computational Projects/MPRA/miniMPRA")
 
 library(ggplot2)
 library(genefilter)
@@ -361,7 +364,7 @@ colnames(miniMPRA_df_file) <- gsub("mm10", "GRCh38", colnames(miniMPRA_df_file))
 
 
 # Reading STAR408 CSV analysis
-star408 <- read.csv("G:/Shared drives/Nord Lab - Computational Projects/MPRA/STAR408/data_complete_408.csv")
+star408 <- read.csv("./data_complete_408.csv")
 
 #star408$Amp_name
 #miniMPRA_df$miniMPRA_ID
@@ -388,7 +391,7 @@ star408 <- read.csv("G:/Shared drives/Nord Lab - Computational Projects/MPRA/STA
 # "Etv1_hs550"     "266_Control_Etv1_hs550"
 
 
-amplicons_308 <- read.csv("G:/Shared drives/Nord Lab - Computational Projects/MPRA/STAR408/data_predict_308.csv")
+amplicons_308 <- read.csv("./data_predict_308.csv")
 
 # Filtering matching star408 amp names
 amp_name_numbers <- gsub("(d*)_.*","", star408$Amp_name, perl = TRUE)
@@ -413,7 +416,7 @@ star_mini_MPRA <- merge(miniMPRA_df, df, by = "ID")
 
 miniMPRA <- miniMPRA_df
 
-#write.csv(miniMPRA, file = "G:/Shared drives/Nord Lab - Temp Overflow/STARR-408_Lambert&Su-Feher/biorxiv submission/20210412/Supp_Tables/miniMPRA_counts_prop_act.csv", row.names = F)
+#write.csv(miniMPRA, file = "G:/Shared drives/Nord Lab - Temp Overflow/STARR-408_Lambert&Su-Feher/eLife submission/Resubmission/Supp_Tables/Supplementary Table 1, miniMPRA_counts_prop_act.csv", row.names = FALSE)
 
 ```
 
@@ -601,15 +604,16 @@ p2 <- p_sample_act_figure
 
 ```
 
-```{r, fig.width = 10, fig.height = 5, fig.cap = "Fig.2 (E) Ratiometric activity of miniMPRA mouse library. (F) Correlation of the mouse orthologue miniMPRA with the human orthologues of the same sequence from the full MPRA library. Only amplicons that passed quality control criteria for both experiments are included."}
+```{r, fig.width = 10, fig.height = 5,  fig.cap = "**Figure 1D**. Ratiometric (log2 RNA/DNA) activity of miniMPRA mouse library in P7 mouse cortex after intraventricular injection at P0. Boxplot of distribution and individual replicates (N = 4) shown for the 16 tested candidates. NEG indicates putative negative candidate, otherwise name indicates nearby gene and, if applicable, embryonic enhancer ID, for positive candidates. **Figure 2–figure supplement 5**. In vivo AAV MPRA replicates findings of the miniMPRA.Correlation of the mouse orthologue miniMPRA with the human orthologues of the same sequence from the full MPRA library. Only amplicons that passed quality control criteria for both experiments are included."}
 
 #grid.arrange(p1, p2, nrow = 1, widths = c(1.2, 1)) 
 
 library(cowplot)
 
-plot_grid(p2, p1, 
-          labels = c('E', 'F'), 
-          rel_widths = c(1.2, 1.2),
-          vjust = 0.9)
+plot_grid(p2 + theme(plot.margin = unit(c(25.5, 5.5, 0, 5.5), units = "pt")), 
+          p1 + theme(plot.margin = unit(c(25.5, 5.5, 0, 5.5), units = "pt")), 
+          labels = c('Figure 1D', 'Figure 2–figure supplement 5'),
+          label_x = c(0, -0.2),
+          vjust = 1.5)
 
 ```
